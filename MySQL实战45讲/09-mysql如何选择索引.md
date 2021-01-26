@@ -15,7 +15,7 @@
 
    1. 扫描行数
 
-      - **扫描行数越少的索引会被选择**
+      - **扫描行数越少的索引会被选择**（扫描行数和读磁盘之间是正相关的，可能不是线性正相关，因为如果一个数据页上可能存储多个行）
 
       - 因为索引存在的目标就是在全表扫描的基础上少扫描一些行数而达到节省时间的目的
       - 但是这个是在实际执行前分析的，所以这是一个近似值，必然有一个计算每种索引会扫描多少行的一个粗略的估算方法。
@@ -34,5 +34,82 @@
 
 
 
+#### 索引选择错误的处理
+
+1. force index（index）明确指定需要指定的索引，让优化器在选择索引时，无需去评估其他索引的执行代价。
+   - 缺点：1. 存在硬编码，当索引变名称的时候需要修改；2. 迁移数据库的时候，会存在语法不兼容；3.选错索引的情况是否常见，一般是出现了这种情况，如果这时候加上这种解决方案，从测试到上线周期较长。
+2. 新增一个更好的索引，或者删除一个不需要的却会被错误选择的索引。
+   - 缺点： 实用性都不太高，可以作为一个优化措施。
 
 
+
+> 核心还是在于优化器在面临几条路的时候，会有一个评估算法，这个评估算法是在实际执行之前的，会出现一些误判的情况，我们这里只是大致了解了哪些特征会引导数据库更偏向选择它，作为一个思路。
+
+这些其实都是一些mysql的bug。
+
+
+
+#### 总结
+
+1. 如果show index 发现索引的统计信息和实际差别较大，可以使用analyze table解决
+2. 如果发现选错了索引，可以使用force index 强制指定某个索引来解决。
+
+
+
+#### 思考题
+
+我们有表，建表语句如下：
+
+```mysql
+
+CREATE TABLE `t` (
+  `id` int(11) NOT NULL,
+  `a` int(11) DEFAULT NULL,
+  `b` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `a` (`a`),
+  KEY `b` (`b`)
+) ENGINE=InnoDB；
+```
+
+有存储过程如下：
+
+```mysql
+
+delimiter ;;
+create procedure idata()
+begin
+  declare i int;
+  set i=1;
+  while(i<=100000)do
+    insert into t values(i, i, i);
+    set i=i+1;
+  end while;
+end;;
+delimiter ;
+call idata();
+```
+
+存储过程的目的是插入数据
+
+(1,1,1)，(2,2,2)，(3,3,3) 直到 (100000,100000,100000)。
+
+![img](https://static001.geekbang.org/resource/image/1e/1e/1e5ba1c2934d3b2c0d96b210a27e1a1e.png)
+
+```mysql
+set long_query_time=0;
+select * from t where a between 10000 and 20000; /*Q1*/
+select * from t force index(a) where a between 10000 and 20000;/*Q2*/
+```
+
+1. 第一句，是将慢查询日志的阈值设置为 0，表示这个线程接下来的语句都会被记录入慢查询日志中；
+2. 第二句，Q1 是 session B 原来的查询；
+3. 第三句，Q2 是加了 force index(a) 来和 session B 原来的查询语句执行情况对比。
+
+![img](https://static001.geekbang.org/resource/image/7c/f6/7c58b9c71853b8bba1a8ad5e926de1f6.png)
+
+问：
+
+通过 session A 的配合，让 session B 删除数据后又重新插入了一遍数据，然后就发现 explain 结果中，rows 字段从 10001 变成 37000 多。而如果没有 session A 的配合，只是单独执行 delete from t 、call idata()、explain 这三句话，会看到 rows 字段其实还是 10000 左右。你可以自己验证一下这个结果。这是什么原因呢？也请你分析一下吧。
+
+答： 无法复现。
