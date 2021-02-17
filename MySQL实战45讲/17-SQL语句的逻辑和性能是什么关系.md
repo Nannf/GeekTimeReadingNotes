@@ -52,3 +52,17 @@ mysql> select * from tradelog where tradeid=110717;
 
 表定义中tradeid是varchar，那么我们在查询的时候，是把后面的整形转换成了varchar，还是把tradeid强转成整形。
 
+假设我们执行 `select "10" > 9`;
+
+如果返回的结果是1，表示是字符串转整形，否则是整形转字符串。
+
+![img](https://static001.geekbang.org/resource/image/2b/14/2b67fc38f1651e2622fe21d49950b214.png)
+
+我们此时再来看之前的查询语句，这就等于
+
+```mysql
+mysql> select * from tradelog where CAST(tradid AS signed int)=110717;
+```
+
+根据我们上面的分析，这个是执行了函数，而无论这个函数有没有改变索引树的顺序，这个都会走全表扫描。
+
