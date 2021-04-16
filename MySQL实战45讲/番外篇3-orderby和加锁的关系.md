@@ -64,6 +64,100 @@ insert into t values(8,8,8)
 
 我不会了。
 
+这个我再读20章的时候，发现这个虽然是先使用等值查询先找的5，然后往后找的时候找到10，但是这里没办法应用优化二因为这个不是等值查询，所以没退化。
+
+(0,10]
+
+#### 场景二
+
+```mysql
+事务A：
+begin;
+select * from t where c>1 and c <=5 order by c desc for update;
+
+事务B：
+update t set d = 9527 where c = 0；
+
+事务C
+insert into t values(-1,-1,-1)
+```
+
+事务B不出意外的被锁住了；
+
+事务C也被锁住了。
+
+这个正如我们所料，我们执行where语句锁住了(0,10],执行order by desc 遍历到了到了0，加了n锁，此时锁的范围变成了
+
+(-无穷，10].
+
+
+
+##### 场景三
+
+```mysql
+事务A：
+begin;
+select * from t where c in(5,10) order by c desc for update;
+
+事务B：
+update t set d = 9527 where c = 0；
+
+事务C
+insert into t values(-1,-1,-1);
+
+事务D
+insert into t values(4,4,4)
+```
+
+我们发现事务B和C可以执行，但是事务D会被锁住。
+
+他娘的，这个锁的范围和不加order by是一样的。
+
+我们来大胆的猜测，这个in和上面的范围有区别吗？in相当于多个or的等值查询，范围查询不是。
+
+in是一种特殊的等值查询；
+
+
+
+##### 场景四
+
+```mysql
+事务A：
+begin;
+select * from t where c in(5,10)  for update;
+
+事务B：
+update t set d = 9527 where c = 0；
+
+事务C
+insert into t values(-1,-1,-1);
+
+事务D
+insert into t values(4,4,4)
+```
+
+效果和上面的场景三是一样的。
+
+这个order by 似乎没啥用。
+
+我们知道mysql 中 in 和多次or的等值查询的区别就是 in会进行排序。
+
+这个结果集天然就是有序的，加不加order by其实对语句执行没有影响。
+
+
+
+为什么范围查找的order by就要去查找不满足条件的下一条记录，而等值的不会。
+
+这个我觉得还是扫描到了，但是就在这个加锁优化二原则的理解
+
+我们引用优化二的原文
+
+> 索引上的等值查询，向右遍历时且最后一个值不满足等值条件的时候，next-key lock 退化为间隙锁。
+
+其实我们发现这个默认是往右遍历的，当我们发现下一个值不满足的时候，我们是不会干扰到下一个值以及以后的值的。
+
+如果这样理解的话我们就能轻松的理解order by 为什么不锁0了，所以它不会锁0，也不会锁0之前的。
+
 
 
 
