@@ -51,6 +51,16 @@ binlog格式，说明跟主备同步有关，而且statement是没办法知道�
 
 
 
+#### insert 循环写入
+
+```mysql
+insert into t(c,d)  (select c+1, d from t force index(c) order by c desc limit 1);
+```
+
+这个语句的原意是找到c最大的那个，然后+1，插入一条新数据。
+
+根据执行计划我们发现其中使用了临时表，之所以不是一边读一边插入，可能是为了避免在读取数据的过程中读取到我们刚刚插入的数据，这就导致了与原意不符合。
+
 
 
 
