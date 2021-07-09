@@ -301,4 +301,17 @@ public class SimpleRateLimiter {
 
 下面我们就逐步把问题变的复杂
 
-如果令牌桶的大小不是一，我们要作何修改
+如果令牌桶的大小不是一，我们要作何修改。
+
+- 我们要记录我们的令牌桶的大小n
+- 现在可用的令牌个数m
+
+没多少思路，我们来看guava包的实现类，有这么几个变量
+
+```java
+    double storedPermits;
+    double maxPermits;
+    double stableIntervalMicros;
+    private long nextFreeTicketMicros;
+```
+
