@@ -1,0 +1,1 @@
+#### Q1: netty的server端把客户端的socketchannel存放在哪
